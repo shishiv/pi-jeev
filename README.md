@@ -1,93 +1,140 @@
-# Jev no Pi
+# pi-jeev
 
-A extensão oferece `jev_decide` para comparar alternativas com evidência e receber uma recomendação tipada do Jev.
-Ela não executa a alternativa escolhida.
+A bounded TypeSafe Jev decision tool for [Pi](https://pi.dev).
 
-## Usar
+Jev is a System One model. It evaluates narrow typed questions against supplied evidence. It is not an agent and does not replace the model that gathers evidence, creates options, or executes work.
 
-A extensão está instalada globalmente em `~/.pi/agent/extensions/jev/` e incluída na lista global de extensões do Pi.
-Fica disponível aos agentes Pi que usam esse diretório de configuração, em qualquer projeto.
-Instâncias com outro `PI_CODING_AGENT_DIR` precisam da própria instalação.
-Não é uma extensão para Claude Code ou outros programas.
-Na conversa que vai usá-la:
+## What it does
+
+`jev_decide` compares two to eight plausible actions after deterministic rules have run. The caller supplies:
+
+- observed facts;
+- explicit constraints;
+- known unknowns;
+- balanced evidence for and against every option;
+- the consequence level of a wrong recommendation.
+
+One TypeSafe request evaluates the choice, evidence sufficiency, and support for every candidate in parallel. Local policy then returns one of three states:
+
+- `recommend`: the low or medium-stakes result cleared every configured threshold;
+- `abstain`: the evidence, support, probability, or margin was too weak;
+- `review_required`: the decision was marked high stakes.
+
+The extension never executes the selected action. `abstain` and `review_required` deliberately return `recommendation: null`.
+
+## Install
+
+Clone the repository into Pi's global extension directory and install development dependencies without lifecycle scripts:
+
+```sh
+git clone https://github.com/shishiv/pi-jeev ~/.pi/agent/extensions/jev
+cd ~/.pi/agent/extensions/jev
+npm ci --ignore-scripts
+git config core.hooksPath .githooks
+```
+
+Add the extension to `~/.pi/agent/settings.json`:
+
+```json
+{
+  "extensions": ["+extensions/jev/index.ts"]
+}
+```
+
+Then reload Pi and enable Jev:
 
 ```text
 /reload
 /jev on
 ```
 
-`/jev on` grava `{"enabled":true}` em `~/.pi/agent/jev.json`.
-`/jev off` grava `{"enabled":false}` no mesmo arquivo.
-A escrita é atômica e o arquivo usa permissão 0600.
-A configuração é global, não pertence à conversa que executou o comando.
-`/jev status` mostra a configuração global, a aplicação neste agente e o thinking efetivo.
-Arquivo ausente significa desligado.
-Não existe flag de ativação por sessão.
+`/jev on` and `/jev off` update `~/.pi/agent/jev.json`. Every idle Pi process using the same agent directory observes that global setting. A busy process applies the change after its current response settles.
 
-Cada instância carregada verifica o arquivo a cada segundo e nos limites de resposta.
-Agentes livres aplicam a mudança em até aproximadamente um segundo.
-Agentes ocupados aguardam o fim da resposta em andamento.
-A mudança não inicia novos turnos nem chamadas de API.
-Sessões novas, retomadas e forks consultam a mesma configuração global.
-Agentes já abertos precisam de um `/reload` inicial para carregar esta extensão; depois acompanham as alterações sem novos reloads.
-Ao desligar, cada agente restaura seu próprio nível anterior, quando a extensão foi quem o desligou.
-Sem ativação, não há instrução adicional, ferramenta ativa ou chamada à TypeSafe.
+## Agent contract
 
-Ao ligar, a extensão consulta as capacidades do modelo executor e solicita thinking `off` somente quando suportado.
-Ela confere o nível efetivo depois da alteração.
-Se o catálogo não oferecer `off`, Jev continua disponível, o nível anterior permanece e o limite é informado.
-No ensaio com `azure-openai-responses/gpt-6-astra`, o Pi não ofereceu `off` e enviou `reasoning.effort=high`.
-A extensão não muda o modelo nem modifica defaults globais.
+Use Jev only when direct evidence and deterministic rules leave at least two materially plausible options whose difference requires semantic judgment.
 
-O histórico privado guarda somente o ponto de restauração do thinking, nunca a autoridade para ativar Jev.
-Trocar o modelo reaplica a configuração global conforme as capacidades do novo executor.
-Uma alteração manual de thinking é respeitada sem desligar Jev globalmente.
-Configuração inválida ou ilegível é informada e desativa o modo local no próximo limite seguro.
+Do not use it for arithmetic, exact lookup, authorization, security policy, known state transitions, or execution of an already selected action. Keep those decisions in code or in the governing human and project rules.
 
-## O que vai para a API
+Example input:
 
-`jev_decide` recebe uma pergunta, um contexto textual e duas a oito alternativas com identificadores únicos.
-A extensão adiciona a alternativa `need_more_evidence`.
-Somente esses dados são enviados a `https://api.typesafe.ai/v1/systemone`, usando `jev-latest`.
-Não há coleta automática de arquivos, histórico, instruções da sessão ou resultados de outras ferramentas.
-O contexto deve conter somente material autorizado para processamento externo.
-A comparação com a própria chave evita seu envio acidental no corpo, mas não é um detector geral de segredos.
-
-A chave é lida de `TYPESAFE_API_KEY` no ambiente ou do `.env` do diretório do Pi.
-O arquivo é interpretado como dotenv, nunca executado como shell.
-A chave não entra nos argumentos da ferramenta, nos resultados ou em logs da extensão.
-
-A resposta inclui recomendação, distribuição de probabilidades, confiança, modelo real, tokens e duração.
-Confiança não é prova nem autorização.
-Jev escolhe entre alternativas propostas pelo executor; ele não gera um plano completo ou código e não remove capacidades internas do modelo.
-A orientação para consultá-lo antes de decisões é uma instrução ao agente, não um bloqueio mecânico de todas as outras ferramentas.
-
-## Falhas e consumo
-
-Uma execução faz no máximo uma requisição, com prazo de quinze segundos e cancelamento ao interromper a tarefa ou fechar a sessão.
-Desligar globalmente durante uma resposta não interrompe essa resposta; a desativação ocorre quando o agente fica livre.
-Não há retries automáticos ou redirecionamentos HTTP.
-Entradas inválidas, respostas incoerentes, erro de rede e HTTP não são convertidos em recomendações.
-Corpos de erro do serviço não são reproduzidos.
-A resposta é limitada a 32 KiB e o corpo enviado a 64 KiB.
-
-O consumo informado pelo Jev aparece no resultado da ferramenta.
-O preço não vem nessa resposta, portanto não é estimado nem somado como custo zero ao total do Pi.
-Qualidade, economia e latência em tarefas reais ainda precisam de avaliação.
-
-## Verificar
-
-```sh
-/usr/bin/node --test --test-concurrency=1 ./jev.test.mjs
+```json
+{
+  "question": "Which support team should receive this request?",
+  "context": {
+    "observed": ["The customer reports a duplicated charge and requests a refund."],
+    "constraints": ["Choose the team responsible for the reported problem."],
+    "unknowns": []
+  },
+  "options": [
+    {
+      "id": "billing",
+      "action": "Route to billing.",
+      "evidenceFor": ["The request concerns a charge and refund."],
+      "evidenceAgainst": []
+    },
+    {
+      "id": "shipping",
+      "action": "Route to shipping.",
+      "evidenceFor": [],
+      "evidenceAgainst": ["No delivery problem is reported."]
+    }
+  ],
+  "stakes": "low"
+}
 ```
 
-Os testes usam o carregador instalado do Pi e fixtures somente para os contratos locais.
-`PI_TEST_PACKAGE_DIR` permite indicar outra instalação do Pi.
-A compatibilidade HTTP foi verificada separadamente por uma chamada real com dados sintéticos.
-O ensaio não equivale a aceite de experiência de uso nem a comparação de qualidade com reasoning nativo.
+The extension canonicalizes option order before transmission. This prevents the caller's preferred ordering from becoming the wire order. Structured fields keep observations, constraints, unknowns, and advocacy distinct.
 
-Para desligar em todos os agentes, use `/jev off` uma única vez em qualquer sessão com a extensão carregada.
-Para impedir também seu carregamento, remova `+extensions/jev/index.ts` da lista global e acrescente `-extensions/jev/index.ts` enquanto os arquivos continuarem no diretório de descoberta.
-Execute `/reload` nas sessões abertas depois dessa alteração de instalação.
-Remover apenas a inclusão explícita não é um desligamento garantido quando a descoberta padrão estiver habilitada.
-Não há alteração em outras extensões, ferramentas de execução ou regras de autorização.
+## Decision policy
+
+The current conservative seed policy is:
+
+| Stakes | Top probability | Margin over runner-up | Evidence sufficiency | Candidate support | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `low` | 0.60 | 0.12 | 0.55 | 0.55 | Recommend only when all pass |
+| `medium` | 0.75 | 0.20 | 0.70 | 0.65 | Recommend only when all pass |
+| `high` | n/a | n/a | n/a | n/a | Always require review |
+
+These are application policy, not universal TypeSafe thresholds. Change them only against labeled evaluations and the cost of wrong actions.
+
+## Privacy and failure behavior
+
+Only the explicit tool input is sent to `https://api.typesafe.ai/v1/systemone` with `jev-latest`. The extension does not collect files, conversation history, or other tool results automatically.
+
+The API key is read from `TYPESAFE_API_KEY` or Pi's `.env`. It is not included in tool arguments or results. Requests have a 15-second deadline, reject redirects, limit bodies and responses, and never retry automatically.
+
+Malformed responses, incomplete answer sets, inconsistent probability distributions, missing credentials, cancellation, and network errors return errors rather than recommendations.
+
+## Development
+
+The project targets Node 26 and TypeScript 7.
+
+```sh
+npm ci --ignore-scripts
+npm run check
+```
+
+`npm run check` runs typechecking, Oxlint with the local anti-slop plugin, and the unit suite with one worker. The repository uses a tracked pre-commit hook through `core.hooksPath=.githooks`, and GitHub Actions runs the same check on pushes and pull requests.
+
+Two opt-in evaluations exercise behavior against live services:
+
+```sh
+npm run eval:live
+npm run eval:agent
+```
+
+`eval:live` runs labeled clear, ambiguous, constrained, and high-impact cases three times each. It also proves that reversing caller option order produces the same request. Results are written under ignored `eval/results/`.
+
+`eval:agent` runs isolated Pi turns for one semantic decision and one deterministic calculation. It checks that the agent calls Jev only for the semantic decision. Both commands consume external model quota.
+
+The initial local V2 run passed 6 of 6 labeled cases across 18 Jev calls. It used 18,678 input tokens and completed the TypeSafe calls in 5.8 seconds total. This is a seed evaluation, not proof of broad domain accuracy.
+
+## Design references
+
+The integration follows TypeSafe's current guidance:
+
+- [Introduction](https://docs.typesafe.ai/introduction)
+- [How to build with TypeSafe](https://docs.typesafe.ai/concepts/how-to-build-with-system-one)
+- [Confidence](https://docs.typesafe.ai/confidence)
+- [Jev 1.13 jaggedness](https://docs.typesafe.ai/model-jaggedness/jev-1.13)

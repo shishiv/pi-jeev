@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
+
+const configSchema = Type.Object({ enabled: Type.Boolean() }, { additionalProperties: false });
+type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export async function readGlobalConfig(path: string): Promise<{ enabled: boolean }> {
   let text: string;
@@ -10,13 +15,14 @@ export async function readGlobalConfig(path: string): Promise<{ enabled: boolean
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return { enabled: false };
     throw new Error("Jev: cannot read global jev.json");
   }
-  let value: unknown;
-  try { value = JSON.parse(text); }
-  catch { throw new Error("Jev: global jev.json is not valid JSON"); }
-  if (value === null || typeof value !== "object" || !("enabled" in value)
-    || typeof value.enabled !== "boolean" || Object.keys(value).some((key) => key !== "enabled")) {
-    throw new Error("Jev: global jev.json must contain only an enabled boolean");
+  let value: JsonValue;
+  try {
+    // SAFETY: JSON.parse returns JSON data, and configSchema validates its complete runtime shape below.
+    value = JSON.parse(text) as JsonValue;
+  } catch {
+    throw new Error("Jev: global jev.json is not valid JSON");
   }
+  if (!Check(configSchema, value)) throw new Error("Jev: global jev.json must contain only an enabled boolean");
   return { enabled: value.enabled };
 }
 
