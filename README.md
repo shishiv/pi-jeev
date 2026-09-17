@@ -115,7 +115,7 @@ npm ci --ignore-scripts
 npm run check
 ```
 
-`npm run check` runs typechecking, Oxlint with the local anti-slop plugin, and the unit suite with one worker. The repository uses a tracked pre-commit hook through `core.hooksPath=.githooks`, and GitHub Actions runs the same check on pushes and pull requests.
+`npm run check` runs typechecking, Oxlint with the local anti-slop plugin, and the unit suite with one worker. The repository uses a tracked pre-commit hook through `core.hooksPath=.githooks`. Checks are local; the repository does not use GitHub Actions.
 
 Two opt-in evaluations exercise behavior against live services:
 
